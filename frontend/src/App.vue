@@ -16,6 +16,47 @@ const isPlaying = ref(false)
 const playProgress = ref(0)
 const classifyInput = ref('')
 const classifyResult = ref<{category: string, confidence: number} | null>(null)
+const searchQuery = ref('')
+const searchResult = ref<{total: number, detected_category: string | null} | null>(null)
+const isSearching = ref(false)
+
+async function naturalSearch() {
+  if (!searchQuery.value.trim()) return
+  isSearching.value = true
+  const res = await axios.get('http://localhost:8000/api/search', {
+    params: { q: searchQuery.value }
+  })
+  const data = res.data
+  searchResult.value = { total: data.total, detected_category: data.detected_category }
+
+  if (geojsonLayer) map.removeLayer(geojsonLayer)
+  if (heatLayer) map.removeLayer(heatLayer)
+
+  geojsonLayer = L.geoJSON(data, {
+    pointToLayer(feature, latlng) {
+      const color = categoryColors[feature.properties.category] ?? '#95a5a6'
+      return L.circleMarker(latlng, {
+        radius: 8, fillColor: color,
+        color: '#fff', weight: 2, fillOpacity: 1
+      })
+    },
+    onEachFeature(feature, layer) {
+      const p = feature.properties
+      layer.bindPopup(`<b>${p.name}</b><br/>${p.category}`)
+    }
+  }).addTo(map)
+
+  if (data.features.length > 0) {
+    map.fitBounds(geojsonLayer!.getBounds(), { padding: [40, 40] })
+  }
+  isSearching.value = false
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  searchResult.value = null
+  applyFilter()
+}
 
 let map: L.Map
 let geojsonLayer: L.GeoJSON | null = null
@@ -281,6 +322,29 @@ onMounted(async () => {
           borderLeft: '3px solid ' + (categoryColors[c.category] ?? '#95a5a6')
         }">{{ c.category }} ({{ c.count }})</button>
 
+        
+      <div style="margin-top:8px;border-top:1px solid #2d2d44;padding-top:12px">
+        <div style="font-size:12px;color:#aaa;margin-bottom:6px">自然语言搜索</div>
+        <input v-model="searchQuery" placeholder="例：附近的医院..."
+          @keyup.enter="naturalSearch"
+          style="width:100%;padding:7px 8px;border-radius:6px;border:none;
+                 background:#2d2d44;color:#fff;font-size:12px;box-sizing:border-box"/>
+        <button @click="naturalSearch"
+          :style="{
+            width:'100%',marginTop:'6px',padding:'7px',borderRadius:'6px',
+            border:'none',cursor:'pointer',fontSize:'13px',color:'#fff',
+            background: isSearching ? '#888' : '#1D9E75'
+          }">
+          {{ isSearching ? '搜索中...' : '搜索地点' }}
+        </button>
+        <div v-if="searchResult"
+          style="margin-top:8px;padding:8px;border-radius:6px;font-size:12px;
+                 background:#2d2d44;color:#fff;display:flex;justify-content:space-between;align-items:center">
+          <span>找到 {{ searchResult.total }} 个
+            <b>{{ searchResult.detected_category ?? '相关' }}</b> POI</span>
+          <span @click="clearSearch" style="cursor:pointer;color:#aaa">✕</span>
+        </div>
+      </div>
       <div style="margin-top:8px;border-top:1px solid #2d2d44;padding-top:12px">
         <div style="font-size:12px;color:#aaa;margin-bottom:6px">AI 分类测试</div>
         <input v-model="classifyInput" placeholder="输入 POI 名称..."

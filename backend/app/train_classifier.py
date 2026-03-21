@@ -76,8 +76,7 @@ def train():
     print("\n分类报告：")
     print(classification_report(y_test, y_pred))
 
-    joblib.dump(pipeline, "/app/app/poi_classifier.pkl")
-    print("模型已保存到 /app/app/poi_classifier.pkl")
-
+    joblib.dump(pipeline, "/app/models/poi_classifier.pkl")
+    print("模型已保存到 /app/models/poi_classifier.pkl")
 if __name__ == "__main__":
     train()

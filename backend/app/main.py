@@ -30,7 +30,7 @@ def get_classifier():
     global clf_pipeline
     if clf_pipeline is None:
         try:
-            clf_pipeline = joblib.load("/app/app/poi_classifier.pkl")
+            clf_pipeline = joblib.load("/app/models/poi_classifier.pkl")
         except FileNotFoundError:
             return None
     return clf_pipeline
@@ -107,3 +107,64 @@ def classify_poi(name: str, description: str = ""):
     proba = clf.predict_proba([text_input])[0]
     confidence = round(float(max(proba)), 3)
     return {"name": name, "category": category, "confidence": confidence}
+
+@app.get("/api/search")
+def natural_language_search(
+    q: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    # 分类关键词映射
+    category_keywords = {
+        "餐饮": ["餐厅", "饭店", "咖啡", "火锅", "烤肉", "快餐", "美食", "吃", "餐馆", "小吃"],
+        "医疗": ["医院", "诊所", "药店", "卫生", "医疗", "门诊", "急救"],
+        "教育": ["学校", "大学", "小学", "中学", "幼儿园", "培训", "图书馆", "学院"],
+        "交通": ["地铁", "公交", "停车", "车站", "机场", "火车"],
+        "景点": ["公园", "景点", "博物馆", "寺庙", "广场", "景区"],
+        "购物": ["超市", "商场", "购物", "商店", "市场"],
+        "住宿": ["酒店", "宾馆", "民宿", "旅馆"],
+    }
+
+    # 提取分类意图
+    detected_category = None
+    for cat, keywords in category_keywords.items():
+        if any(kw in q for kw in keywords):
+            detected_category = cat
+            break
+
+    # 提取名称关键词（去掉常用虚词）
+    stop_words = ["的", "附近", "周边", "哪里", "在哪", "找", "查", "有", "区", "附近的"]
+    name_query = q
+    for sw in stop_words:
+        name_query = name_query.replace(sw, " ")
+    name_query = name_query.strip()
+
+    # 构建查询
+    query = db.query(POI)
+    if detected_category:
+        query = query.filter(POI.category == detected_category)
+    elif name_query:
+        query = query.filter(POI.name.ilike(f"%{name_query}%"))
+
+    pois = query.limit(100).all()
+
+    features = []
+    for poi in pois:
+        point = to_shape(poi.geom)
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [point.x, point.y]},
+            "properties": {
+                "id": poi.id,
+                "name": poi.name,
+                "category": poi.category,
+                "address": poi.address,
+            }
+        })
+
+    return {
+        "type": "FeatureCollection",
+        "query": q,
+        "detected_category": detected_category,
+        "total": len(features),
+        "features": features
+    }
