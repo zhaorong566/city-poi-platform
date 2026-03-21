@@ -204,7 +204,7 @@ async function toggleTrajectory() {
   trajectoryLine = L.polyline(trajectoryCoords, {
     color: '#f39c12', weight: 3, opacity: 0.8, dashArray: '8,4'
   }).addTo(map)
-  trajectoryMarker = L.circleMarker(trajectoryCoords[0], {
+  trajectoryMarker = L.circleMarker(trajectoryCoords[0]!, {
     radius: 8, fillColor: '#f39c12', color: '#fff', weight: 2, fillOpacity: 1
   }).addTo(map)
   map.fitBounds(trajectoryLine.getBounds(), { padding: [40, 40] })
@@ -230,7 +230,7 @@ function togglePlay() {
       currentStep = trajectoryCoords.length - 1
       stopAnimation(); return
     }
-    trajectoryMarker?.setLatLng(trajectoryCoords[currentStep])
+    trajectoryMarker?.setLatLng(trajectoryCoords[currentStep]!)
     playProgress.value = Math.round((currentStep / (trajectoryCoords.length - 1)) * 100)
     animationFrame = requestAnimationFrame(() => setTimeout(animate, 120))
   }
@@ -241,7 +241,7 @@ function onProgressChange(e: Event) {
   const val = parseInt((e.target as HTMLInputElement).value)
   currentStep = Math.round((val / 100) * (trajectoryCoords.length - 1))
   playProgress.value = val
-  trajectoryMarker?.setLatLng(trajectoryCoords[currentStep])
+  trajectoryMarker?.setLatLng(trajectoryCoords[currentStep]!)
 }
 
 async function classifyPOI() {

@@ -8,6 +8,10 @@ from app.config import settings
 from app.models import POI, Trajectory
 import joblib
 import jieba
+import redis
+import json
+
+redis_client = redis.from_url("redis://redis:6379", decode_responses=True)
 
 app = FastAPI(title="City POI Platform", version="0.1.0")
 
@@ -46,10 +50,16 @@ def list_pois(
     limit: int = Query(500, le=2000),
     offset: int = Query(0),
 ):
+    cache_key = f"pois:{category}:{limit}:{offset}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
     query = db.query(POI)
     if category:
         query = query.filter(POI.category == category)
     pois = query.offset(offset).limit(limit).all()
+
     features = []
     for poi in pois:
         point = to_shape(poi.geom)
@@ -64,18 +74,29 @@ def list_pois(
                 "description": poi.description,
             }
         })
-    return {
+
+    result = {
         "type": "FeatureCollection",
         "total": query.count(),
         "features": features
     }
+    redis_client.setex(cache_key, 3600, json.dumps(result, ensure_ascii=False))
+    return result
+
 
 @app.get("/api/pois/categories")
 def list_categories(db: Session = Depends(get_db)):
+    cache_key = "categories"
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
     rows = db.execute(
         text("SELECT category, COUNT(*) as cnt FROM pois GROUP BY category ORDER BY cnt DESC")
     ).fetchall()
-    return [{"category": r[0], "count": r[1]} for r in rows]
+    result = [{"category": r[0], "count": r[1]} for r in rows]
+    redis_client.setex(cache_key, 3600, json.dumps(result, ensure_ascii=False))
+    return result
 
 @app.get("/api/trajectories")
 def list_trajectories(db: Session = Depends(get_db)):
@@ -168,3 +189,11 @@ def natural_language_search(
         "total": len(features),
         "features": features
     }
+    
+@app.delete("/api/cache")
+def clear_cache():
+    keys = redis_client.keys("pois:*")
+    keys += redis_client.keys("categories*")
+    if keys:
+        redis_client.delete(*keys)
+    return {"cleared": len(keys), "message": "缓存已清除"}    
